@@ -73,14 +73,35 @@ class DOTBIM_OT_export(bpy.types.Operator, ExportHelper):
         ),
         default="NAME",
     )
+    export_face_colors: bpy.props.BoolProperty(
+        name="Export Face Colors",
+        default=True,
+    )
+    vertex_color_layer: bpy.props.StringProperty(
+        name="Vertex Color Layer",
+        description="Use this layer to export face colors. All vertices of each face must share the same color",
+        default="Col",
+    )
 
     def execute(self, context):
         blender_to_dotbim.export_objects(
             objs=context.selected_objects if self.export_filter == "SELECTED" else context.scene.objects,
             filepath=self.filepath,
             author=self.author,
+            vertex_colors_layer=self.vertex_color_layer if self.export_face_colors else None
         )
         return {"FINISHED"}
+    
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "export_filter")
+        layout.prop(self, "author")
+        layout.prop(self, "type_from")
+        layout.prop(self, "export_face_colors")
+        row = layout.row()
+        row.prop(self, "vertex_color_layer")
+        row.enabled = self.export_face_colors
+        
 
 
 def menu_func_import(self, context):

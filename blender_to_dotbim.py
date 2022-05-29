@@ -16,7 +16,7 @@ def triangulate_mesh(mesh):
     bm.free()
 
 
-def convert_blender_mesh_to_dotbim(blender_mesh, index, transform_matrix):
+def convert_blender_mesh_to_dotbim(blender_mesh, index, transform_matrix, vertex_colors_layer):
     vertices = np.empty(shape=len(blender_mesh.vertices) * 3, dtype=float)
     blender_mesh.vertices.foreach_get("co", vertices)
     scale = transform_matrix.to_scale()
@@ -27,7 +27,9 @@ def convert_blender_mesh_to_dotbim(blender_mesh, index, transform_matrix):
     faces = np.empty(shape=len(blender_mesh.polygons) * 3, dtype=int)
     blender_mesh.polygons.foreach_get("vertices", faces)
 
-    return dotbimpy.Mesh(mesh_id=index, coordinates=vertices.tolist(), indices=faces.tolist())
+    face_colors = get_vertex_colors_map(blender_mesh, vertex_colors_layer) if vertex_colors_layer else None
+
+    return (dotbimpy.Mesh(mesh_id=index, coordinates=vertices.tolist(), indices=faces.tolist()), face_colors)
 
 
 def get_all_ui_props(obj):
@@ -39,7 +41,18 @@ def get_all_ui_props(obj):
         yield (k, v)
 
 
-def export_objects(objs, filepath, author="John Doe", type_from="NAME"):
+def get_vertex_colors_map(mesh, layer_name):
+    if not mesh.vertex_colors:
+        return None
+
+    color_layer = mesh.vertex_colors[layer_name]
+    face_colors = np.empty(shape=len(color_layer.data) * 4, dtype=float)
+    color_layer.data.foreach_get("color", face_colors)
+    face_colors = face_colors.reshape(-1, 4)[0::3].flatten()  # Remy F https://stackoverflow.com/a/61140462/7092409
+    return face_colors
+
+
+def export_objects(objs, filepath, author="John Doe", type_from="NAME", vertex_colors_layer="Col"):
     meshes = []
     elements = []
 
@@ -57,7 +70,12 @@ def export_objects(objs, filepath, author="John Doe", type_from="NAME"):
         base_obj = users[0]
         mesh_blender = base_obj.evaluated_get(depsgraph).to_mesh()  # Apply visual modifiers, transforms, etc.
         transform_matrix = base_obj.matrix_world
-        mesh_dotbim = convert_blender_mesh_to_dotbim(mesh_blender, i, transform_matrix)
+        mesh_dotbim, face_colors = convert_blender_mesh_to_dotbim(
+            mesh_blender,
+            i,
+            transform_matrix,
+            vertex_colors_layer,
+        )
         meshes.append(mesh_dotbim)
 
         for obj in users:
@@ -87,7 +105,14 @@ def export_objects(objs, filepath, author="John Doe", type_from="NAME"):
 
             vector = dotbimpy.Vector(x=obj_trans.x, y=obj_trans.y, z=obj_trans.z)
             element = dotbimpy.Element(
-                mesh_id=i, vector=vector, guid=guid, info=info, rotation=rotation, type=name, color=color
+                mesh_id=i,
+                vector=vector,
+                guid=guid,
+                info=info,
+                rotation=rotation,
+                type=name,
+                color=color,
+                face_colors=face_colors,
             )
 
             elements.append(element)
@@ -99,4 +124,4 @@ def export_objects(objs, filepath, author="John Doe", type_from="NAME"):
 
 if __name__ == "__main__":
     objects = bpy.context.selected_objects
-    export_objects(objs=objects, filepath=r'House.bim')
+    export_objects(objs=objects, filepath=r"House.bim")
